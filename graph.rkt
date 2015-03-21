@@ -40,15 +40,15 @@
 
 (define (get-complete-graph n)
   (unweighted-graph/undirected
-   (unnest (for/list ([i (in-range 0 (+ n 1))])
-             (for/list ([j (in-range i (+ n 1))])
-               (list i j))))))
+   (unnest (for/list ([i (in-range 0 n)])
+             (for/list ([j (in-range i n)])
+               (list (vertex i) (vertex j)))))))
 
 (define (graph-complement/undirected g)
   (let*
       ([vertices (get-vertices g)]
-       [graph-min (argmin identity vertices)]
-       [graph-max (argmax identity vertices)]
+       [graph-min (argmin vertex-id vertices)]
+       [graph-max (argmax vertex-id vertices)]
        [complete-graph (get-complete-graph (- graph-max graph-min))]
        [complement
         (unweighted-graph/undirected
@@ -62,7 +62,7 @@
 
 (define (remove-self-loops g)
   (unweighted-graph/undirected
-   (filter (lambda (e) (not (= (car e) (car (cdr e)))))
+   (filter (lambda (e) (not (equal? (car e) (car (cdr e)))))
            (get-edges g))))
 
 ; returns the edge set of a random undirected graph with n nodes,
@@ -85,13 +85,13 @@
 
 ; if node i for 0 <= i <= n is not in g, adds node i to g.
 (define (fill-to-range g n)
-  (for-each (lambda (i) (not (has-vertex? g i)) (add-vertex! g i))
-            (sequence->list (in-range 0 (+ n 1))))
+  (for-each (lambda (i) (not (has-vertex? g (vertex i))) (add-vertex! g (vertex i)))
+            (sequence->list (in-range 0 n)))
   g)
 
 (define g
   (let ([first-arg (vector-ref (current-command-line-arguments) 0)]
-        [second-arg (with-handlers ([exn:fail (lambda (exn) '())])
+        [second-arg (with-handlers ([exn:fail? (lambda (exn) '())])
                       (vector-ref (current-command-line-arguments) 1))])
     (if (null? second-arg)
         (read-graph first-arg) ; one arg => first-arg is path to a graph file
@@ -101,9 +101,38 @@
                [graph (make-random-graph/undirected n p)])
           (fill-to-range graph n)))))
 
+(define (graph->edge-id-list g)
+  (map (lambda (e) (list (vertex-id (car e)) (vertex-id (car (cdr e)))))
+       (get-edges g)))
+
+(define (uniqify-upto-edge-reversal edges)
+  (letrec
+      ([get-uniq-edges
+        (lambda (edge-set)
+          (cond [(set-empty? edge-set) edge-set]
+                [else (let ([e (set-first edge-set)])
+                        (cond [(and (set-member? edge-set e)
+                                    (set-member? edge-set (reverse e)))
+                               (get-uniq-edges (set-remove edge-set e))]
+                              [else (set-add (get-uniq-edges (set-remove edge-set e)) e)]))]))])
+    (set->list (get-uniq-edges (list->set edges)))))
+
+(define (print-dot/undirected g)
+  (displayln "graph g {")
+    (for-each
+     (lambda (e)
+       (display (vertex-id (car e)))
+       (display " -- ")
+       (display (vertex-id (car (cdr e))))
+       (displayln ";"))
+     (uniqify-upto-edge-reversal (get-edges g)))
+    (displayln "}"))
 
 ; (define g_c (graph-complement/undirected g))
-;(displayln (get-complete-edges 5))
+;(displayln (graph->edge-id-list (get-complete-graph 3)))
 ;(displayln (make-random-edges/undirected 5 .5))
-(graphviz g)
+;(graphviz g)
+;(displayln (graph->edge-id-list g))
+(print-dot/undirected g)
+;(displayln (uniqify-upto-edge-reversal (get-edges g)))
 ; (graphviz g_c)
