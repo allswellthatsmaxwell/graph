@@ -1,13 +1,20 @@
 #lang racket
 (require graph)
 (require racket/set)
+(require racket/cmdline)
+(require errortrace)
 
-; the first line in path is either "directed" or "undirected"
+(struct vertex (id [color #:auto])
+  #:auto-value "white"
+  #:transparent)
+
+; the first line in path is either "directed" or something else
+; anything but "directed" is taken to mean the graph is undirected.
 ; the rest is a series of edges:
 ; 1 2
 ; 4 5
 ; ...
-
+; returns a graph made up of the edges (and nodes, implicitly) in path.
 (define (read-graph path)
   (let* ([info (file->list path)]
          [type (car info)]
@@ -18,8 +25,8 @@
                             (cond
                               [(null? vertices) '()]
                               [else
-                               (cons (list (car vertices)
-                                           (car (cdr vertices)))
+                               (cons (list (vertex (car vertices))
+                                           (vertex (car (cdr vertices))))
                                      (make-pairs (cddr vertices)))]))])
                       (make-pairs vertices))])
     (if (equal? type "directed")
@@ -31,30 +38,72 @@
       '()
       (append (car l) (unnest (cdr l)))))
 
+(define (get-complete-graph n)
+  (unweighted-graph/undirected
+   (unnest (for/list ([i (in-range 0 (+ n 1))])
+             (for/list ([j (in-range i (+ n 1))])
+               (list i j))))))
 
 (define (graph-complement/undirected g)
   (let*
       ([vertices (get-vertices g)]
        [graph-min (argmin identity vertices)]
        [graph-max (argmax identity vertices)]
-       [complete-list (for/list ([i (in-range graph-min (+ graph-max 1))])
-                          (for/list ([j (in-range i (+ graph-max 1))])
-                            (list i j)))])
-    (unweighted-graph/undirected
-     (filter (lambda (pair) (not (= (car pair) (car (cdr pair)))))
-             (set->list (set-subtract (list->set (unnest complete-list))
-                                      (list->set (get-edges g))))))))
+       [complete-graph (get-complete-graph (- graph-max graph-min))]
+       [complement
+        (unweighted-graph/undirected
+         (remove-self-loops (subtract-graph complete-graph g)))])
+    ; the above process disappears fully connected nodes in g. Put them
+    ; into complement:
+    (for-each
+     (lambda (v) (not (has-vertex? complement v)) (add-vertex! complement v))
+     (get-vertices g))
+    complement))
+
+(define (remove-self-loops g)
+  (unweighted-graph/undirected
+   (filter (lambda (e) (not (= (car e) (car (cdr e)))))
+           (get-edges g))))
+
+; returns the edge set of a random undirected graph with n nodes,
+; with probability p that there is an edge between two given nodes.
+(define (make-random-graph/undirected n p)
+  (letrec ([remove-edges
+            (lambda (edges)
+              (cond [(null? edges) '()]
+                    [(> (random) (- 1 p))
+                     (append (list (car edges)) (remove-edges (cdr edges)))]
+                    [else (remove-edges (cdr edges))]))])
+    (remove-self-loops
+     (unweighted-graph/undirected
+      (remove-edges (get-edges (get-complete-graph n)))))))
+
+(define (subtract-graph g h)
+  (unweighted-graph/undirected
+   (set->list (set-subtract (list->set (get-edges g))
+                            (list->set (get-edges h))))))
+
+; if node i for 0 <= i <= n is not in g, adds node i to g.
+(define (fill-to-range g n)
+  (for-each (lambda (i) (not (has-vertex? g i)) (add-vertex! g i))
+            (sequence->list (in-range 0 (+ n 1))))
+  g)
+
+(define g
+  (let ([first-arg (vector-ref (current-command-line-arguments) 0)]
+        [second-arg (with-handlers ([exn:fail (lambda (exn) '())])
+                      (vector-ref (current-command-line-arguments) 1))])
+    (if (null? second-arg)
+        (read-graph first-arg) ; one arg => first-arg is path to a graph file
+                               ; two args => first-arg = n, second-arg = p
+        (let* ([n (string->number first-arg)]
+               [p (string->number second-arg)]
+               [graph (make-random-graph/undirected n p)])
+          (fill-to-range graph n)))))
 
 
-
-
-; (define graph-file (vector-ref (current-command-line-arguments) 0))
-(define graph-file "/home/mson/Documents/cse/graphs/gc_4_1")
-(define g (read-graph graph-file))
-(define g_c (graph-complement/undirected g))
-
-
+; (define g_c (graph-complement/undirected g))
+;(displayln (get-complete-edges 5))
+;(displayln (make-random-edges/undirected 5 .5))
 (graphviz g)
-(graphviz g_c)
-; (displayln (get-vertices g))
-; (displayln (get-edges g))
+; (graphviz g_c)
