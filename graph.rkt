@@ -1,13 +1,23 @@
 #lang racket
 (require graph)
 (require racket/set)
-(require racket/cmdline)
 (require errortrace)
 
-(struct vertex (id [color #:auto])
+(struct vertex (id [color #:auto #:mutable])
   #:auto-value "white"
-  #:transparent)
-
+  #:methods
+  gen:equal+hash
+  [(define (equal-proc a b equal?-recur)
+     ; compare a and b
+     (equal?-recur (vertex-id a) (vertex-id b)))
+   (define (hash-proc a hash-recur)
+     ; compute primary hash code of a
+     (hash-recur (vertex-id a)))
+   (define (hash2-proc a hash2-recur)
+     ; compute secondary hash code of a
+     (hash2-recur (expt (vertex-id a) (vertex-id a))))])
+     
+; (: read-graph (-> String Graph))
 ; the first line in path is either "directed" or something else
 ; anything but "directed" is taken to mean the graph is undirected.
 ; the rest is a series of edges:
@@ -33,17 +43,20 @@
         (unweighted-graph/directed edge-list)
         (unweighted-graph/undirected edge-list))))
 
+; (: unnest (-> List List))
 (define (unnest l)
   (if (null? l)
       '()
       (append (car l) (unnest (cdr l)))))
 
+; (: get-complete-graph (-> Integer Graph))
 (define (get-complete-graph n)
   (unweighted-graph/undirected
    (unnest (for/list ([i (in-range 0 n)])
              (for/list ([j (in-range i n)])
                (list (vertex i) (vertex j)))))))
 
+; (: graph-complement/undirected (-> Graph Graph))
 (define (graph-complement/undirected g)
   (let*
       ([vertices (get-vertices g)]
@@ -60,11 +73,13 @@
      (get-vertices g))
     complement))
 
+; (: remove-self-loops (-> Graph Graph))
 (define (remove-self-loops g)
   (unweighted-graph/undirected
    (filter (lambda (e) (not (equal? (car e) (car (cdr e)))))
            (get-edges g))))
 
+; (: make-random-graph/undirected (-> Integer Real Graph))
 ; returns the edge set of a random undirected graph with n nodes,
 ; with probability p that there is an edge between two given nodes.
 (define (make-random-graph/undirected n p)
@@ -78,16 +93,55 @@
      (unweighted-graph/undirected
       (remove-edges (get-edges (get-complete-graph n)))))))
 
+; (: subtract-graph (-> Graph Graph Graph))
 (define (subtract-graph g h)
   (unweighted-graph/undirected
    (set->list (set-subtract (list->set (get-edges g))
                             (list->set (get-edges h))))))
 
+
+; (: fill-to-range (-> Graph Integer))
 ; if node i for 0 <= i <= n is not in g, adds node i to g.
 (define (fill-to-range g n)
   (for-each (lambda (i) (not (has-vertex? g (vertex i))) (add-vertex! g (vertex i)))
             (sequence->list (in-range 0 n)))
   g)
+
+; (: graph->edge-id-list (-> Graph List))
+(define (graph->edge-id-list g)
+  (map (lambda (e) (list (vertex-id (car e)) (vertex-id (car (cdr e)))))
+       (get-edges g)))
+
+; (: uniqify-upto-edge-reversal (-> List List))
+(define (uniqify-upto-edge-reversal edges)
+  (letrec
+      ([get-uniq-edges
+        (lambda (edge-set)
+          (cond [(set-empty? edge-set) edge-set]
+                [else (let ([e (set-first edge-set)])
+                        (cond [(and (set-member? edge-set e)
+                                    (set-member? edge-set (reverse e)))
+                               (get-uniq-edges (set-remove edge-set e))]
+                              [else (set-add (get-uniq-edges (set-remove edge-set e)) e)]))]))])
+    (set->list (get-uniq-edges (list->set edges)))))
+
+; (: print-graphviz/undirected (-> Graph None))
+(define (print-graphviz/undirected g)
+  (displayln "graph g {")
+    (for-each
+     (lambda (e)
+       (display (vertex-id (car e)))
+       (display " -- ")
+       (display (vertex-id (car (cdr e))))
+       (displayln ";"))
+     (uniqify-upto-edge-reversal (get-edges g)))
+    (for-each (lambda (v)
+                (display (vertex-id v))
+                (display " [style=filled] [fillcolor=")
+                (display (vertex-color v))
+                (displayln "];"))
+              (get-vertices g))
+    (displayln "}"))
 
 (define g
   (let ([first-arg (vector-ref (current-command-line-arguments) 0)]
@@ -101,38 +155,35 @@
                [graph (make-random-graph/undirected n p)])
           (fill-to-range graph n)))))
 
-(define (graph->edge-id-list g)
-  (map (lambda (e) (list (vertex-id (car e)) (vertex-id (car (cdr e)))))
-       (get-edges g)))
+(define (int->color n)
+  (cond [(= n 0) "antiquewhite"]
+        [(= n 1) "aquamarine1"]
+        [(= n 2) "cyan4"]
+        [(= n 3) "darkorange1"]
+        [(= n 4) "deeppink4"]
+        [(= n 5) "firebrick"]
+        [(= n 6) "goldenrod3"]
+        [else "orchid2"]))
 
-(define (uniqify-upto-edge-reversal edges)
-  (letrec
-      ([get-uniq-edges
-        (lambda (edge-set)
-          (cond [(set-empty? edge-set) edge-set]
-                [else (let ([e (set-first edge-set)])
-                        (cond [(and (set-member? edge-set e)
-                                    (set-member? edge-set (reverse e)))
-                               (get-uniq-edges (set-remove edge-set e))]
-                              [else (set-add (get-uniq-edges (set-remove edge-set e)) e)]))]))])
-    (set->list (get-uniq-edges (list->set edges)))))
-
-(define (print-dot/undirected g)
-  (displayln "graph g {")
-    (for-each
-     (lambda (e)
-       (display (vertex-id (car e)))
-       (display " -- ")
-       (display (vertex-id (car (cdr e))))
-       (displayln ";"))
-     (uniqify-upto-edge-reversal (get-edges g)))
-    (displayln "}"))
+(define (graph-set-colors g colors)
+  (for-each (lambda (v)
+              (let ([color (hash-ref colors v)])
+                (set-vertex-color! v (int->color color))))
+            (hash-keys colors))
+  g)
 
 ; (define g_c (graph-complement/undirected g))
 ;(displayln (graph->edge-id-list (get-complete-graph 3)))
 ;(displayln (make-random-edges/undirected 5 .5))
 ;(graphviz g)
 ;(displayln (graph->edge-id-list g))
-(print-dot/undirected g)
+(print-graphviz/undirected (graph-set-colors g (coloring g 7)))
+
+;  (for-each (lambda (e)
+;              (display (vertex-id (car e)))
+;              (display " ")
+;              (displayln (vertex-id (car (cdr e)))))
+            ;          (
 ;(displayln (uniqify-upto-edge-reversal (get-edges g)))
 ; (graphviz g_c)
+; (get-vertices (graph-set-colors g (coloring g 4)))
