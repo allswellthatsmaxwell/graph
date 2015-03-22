@@ -151,30 +151,31 @@
                [graph (make-random-graph/undirected n p)])
           (fill-to-range graph n)))))
 
-(define (int->color n)
-  (cond [(= n 0) "antiquewhite"]
-        [(= n 1) "aquamarine1"]
-        [(= n 2) "cyan4"]
-        [(= n 3) "darkorange1"]
-        [(= n 4) "deeppink4"]
-        [(= n 5) "firebrick"]
-        [(= n 6) "goldenrod3"]
-        [else "orchid2"]))
+(define color-list (file->list "colors.txt"))
 
 (define (graph-set-colors g colors)
   (for-each (lambda (v)
               (let ([color (hash-ref colors v)])
-                (set-vertex-color! v (int->color color))))
+                (set-vertex-color! v (list-ref color-list color))))
             (hash-keys colors))
   g)
+
+(define g_c (graph-complement/undirected g))
+(print-graphviz/undirected (graph-set-colors g (coloring g (length color-list))))
+(print-graphviz/undirected (graph-set-colors g_c (coloring g_c (length color-list))))
+
+
+
+
+
+
+
+
 
 ;(displayln (graph->edge-id-list (get-complete-graph 3)))
 ;(displayln (make-random-edges/undirected 5 .5))
 ;(graphviz g)
 ;(displayln (graph->edge-id-list g))
-(define g_c (graph-complement/undirected g))
-(print-graphviz/undirected (graph-set-colors g (coloring g 7)))
-(print-graphviz/undirected (graph-set-colors g_c (coloring g_c 7)))
 
 ;  (for-each (lambda (e)
 ;              (display (vertex-id (car e)))
