@@ -16,7 +16,7 @@
    (define (hash2-proc a hash2-recur)
      ; compute secondary hash code of a
      (hash2-recur (expt (vertex-id a) (vertex-id a))))])
-     
+
 ; (: read-graph (-> String Graph))
 ; the first line in path is either "directed" or something else
 ; anything but "directed" is taken to mean the graph is undirected.
@@ -60,12 +60,8 @@
 (define (graph-complement/undirected g)
   (let*
       ([vertices (get-vertices g)]
-       [graph-min (argmin vertex-id vertices)]
-       [graph-max (argmax vertex-id vertices)]
-       [complete-graph (get-complete-graph (- graph-max graph-min))]
-       [complement
-        (unweighted-graph/undirected
-         (remove-self-loops (subtract-graph complete-graph g)))])
+       [complete-graph (get-complete-graph (- (length (get-vertices g)) 1))]
+       [complement (remove-self-loops (subtract-graph complete-graph g))])
     ; the above process disappears fully connected nodes in g. Put them
     ; into complement:
     (for-each
@@ -172,12 +168,13 @@
             (hash-keys colors))
   g)
 
-; (define g_c (graph-complement/undirected g))
 ;(displayln (graph->edge-id-list (get-complete-graph 3)))
 ;(displayln (make-random-edges/undirected 5 .5))
 ;(graphviz g)
 ;(displayln (graph->edge-id-list g))
+(define g_c (graph-complement/undirected g))
 (print-graphviz/undirected (graph-set-colors g (coloring g 7)))
+(print-graphviz/undirected (graph-set-colors g_c (coloring g_c 7)))
 
 ;  (for-each (lambda (e)
 ;              (display (vertex-id (car e)))
